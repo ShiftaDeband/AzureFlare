@@ -12,6 +12,7 @@ FARPROC gethostbyaddr;
 FARPROC getsockopt;
 FARPROC htons;
 FARPROC inet_addr;
+FARPROC ntohs;
 FARPROC recv;
 FARPROC recvfrom;
 FARPROC select;
@@ -31,6 +32,7 @@ extern "C" NAKED void _gethostbyaddr()  { jmp(gethostbyaddr); }
 extern "C" NAKED void _getsockopt()  { jmp(getsockopt); }
 extern "C" NAKED void _htons()  { jmp(htons); }
 extern "C" NAKED void _inet_addr()  { jmp(inet_addr); }
+extern "C" NAKED void _ntohs()  { jmp(ntohs); }
 extern "C" NAKED void _recv()  { jmp(recv); }
 extern "C" NAKED void _recvfrom()  { jmp(recvfrom); }
 extern "C" NAKED void _select()  { jmp(select); }
@@ -55,6 +57,7 @@ void HookLibraryFunctions()
     getsockopt = GetProcAddress(hDll, "getsockopt");
     htons = GetProcAddress(hDll, "htons");
     inet_addr = GetProcAddress(hDll, "inet_addr");
+    ntohs = GetProcAddress(hDll, "ntohs");
     recv = GetProcAddress(hDll, "recv");
     recvfrom = GetProcAddress(hDll, "recvfrom");
     select = GetProcAddress(hDll, "select");

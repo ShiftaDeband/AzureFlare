@@ -9,6 +9,7 @@ EXPORTS
 	getsockopt      = _getsockopt @7
 	htons           = _htons @9
 	inet_addr       = _inet_addr @10
+	ntohs           = _ntohs @8
 	recv            = _recv @16
 	recvfrom        = _recvfrom @17
 	select          = _select @18
