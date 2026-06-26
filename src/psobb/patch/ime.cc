@@ -26,6 +26,31 @@ namespace AzureFlare::Patches
             if (Settings::DisableIMEInput) Utils::hook::write(finalOffset, { 0x00, 0x8E, 0xC3, 0x9C }); // call ds:dword_8EC39C
         });
 
+        // Patch ImmGetContext to disable IME in game chat (vs. character creation)
+        if (Settings::DisableIMEInput)
+        {
+            HMODULE hMod = GetModuleHandleA("PsoBB.exe");
+            if (hMod)
+            {
+                uintptr_t base = reinterpret_cast<uintptr_t>(hMod);
+                uint8_t* patch_addr = reinterpret_cast<uint8_t*>(base + 0x44B044);
+                uint8_t expected[] = { 0x50, 0xE8, 0xDE, 0x0D, 0x06, 0x00, 0xC3 };
+                if (memcmp(patch_addr, expected, 7) == 0)
+                {
+                    DWORD old_protect = 0;
+                    if (VirtualProtect(patch_addr, 4096, PAGE_EXECUTE_READWRITE, &old_protect))
+                    {
+                        *reinterpret_cast<uint16_t*>(patch_addr) = 0xC033;
+                        *reinterpret_cast<uint8_t*>(patch_addr + 2) = 0xC3;
+                        for (int i = 3; i < 7; i++)
+                            *reinterpret_cast<uint8_t*>(patch_addr + i) = 0x90;
+                        VirtualProtect(patch_addr, 4096, old_protect, &old_protect);
+                        PRINT_DEBUG("IME: Patched ImmGetContext at 0x%p", patch_addr);
+                    }
+                }
+            }
+        }
+
         ime.clear();
     }
 }

@@ -1,6 +1,8 @@
 #include <console.hh>
 #include <settings/settings.hh>
 
+#include <MinHook.h>
+
 #include "wsock32.hh"
 
 using namespace AzureFlare;
@@ -112,4 +114,95 @@ extern "C" hostent* __stdcall _gethostbyname(const char* name)
 	PRINT_DEBUG_N("Hostname: %s => %s", name, newHostname);
 
 	return pOriginalGetHostByName(newHostname);
+}
+
+struct sockaddr_in_redirect {
+    short          sin_family;
+    unsigned short sin_port;
+    unsigned long  sin_addr;
+    char           sin_zero[8];
+};
+
+#define AF_INET_REDIRECT 2
+
+static const unsigned long g_KnownServerIPs[] = {
+    0x72C8AC3D,  // 61.172.200.114  (CN game server)
+    0x73C8AC3D,  // 61.172.200.115  (CN patch server)
+    0xE02919DA,  // 218.25.41.224   (CN patch server)
+    0x23EF973D,  // 61.151.239.35   (CN patch server)
+    0xB1F888DB,  // 219.136.248.177 (CN patch server)
+    0xE46742DA,  // 218.66.103.228  (CN patch server)
+    0x06AB59DA,  // 218.89.171.6    (CN patch server)
+};
+
+typedef int (WINAPI* OriginalConnect)(int, const void*, int);
+static OriginalConnect pRealConnect = nullptr;
+
+extern "C" int WINAPI DetourConnect(int s, const void* name, int namelen)
+{
+    if (!pRealConnect) return -1;
+    if (!Settings::EnableServerRedirection || !name || namelen < (int)sizeof(sockaddr_in_redirect))
+        return pRealConnect(s, name, namelen);
+
+    const sockaddr_in_redirect* addr = (const sockaddr_in_redirect*)name;
+    if (addr->sin_family != AF_INET_REDIRECT)
+        return pRealConnect(s, name, namelen);
+
+    unsigned long dest_ip = addr->sin_addr;
+    bool matched = false;
+    for (int i = 0; i < 7; i++) {
+        if (dest_ip == g_KnownServerIPs[i]) {
+            matched = true;
+            break;
+        }
+    }
+    if (!matched)
+        return pRealConnect(s, name, namelen);
+
+    // Resolve redirect IP from config lazily
+    static unsigned long redirect_ip = 0;
+    if (redirect_ip == 0) {
+        typedef unsigned long (WINAPI* InetAddrFn)(const char*);
+        InetAddrFn pInetAddr = (InetAddrFn)inet_addr;
+        redirect_ip = pInetAddr(Settings::GameUrls.CNServerUrls.GameServerUrl.c_str());
+        if (redirect_ip == 0 || redirect_ip == 0xFFFFFFFF) {
+            redirect_ip = pInetAddr(Settings::GameUrls.CNServerUrls.PatchServerUrl.c_str());
+        }
+    }
+    if (redirect_ip == 0 || redirect_ip == 0xFFFFFFFF) {
+        PRINT_DEBUG_N("Connect redirect: no valid server IP, passing through");
+        return pRealConnect(s, name, namelen);
+    }
+
+    sockaddr_in_redirect redirect_addr = *addr;
+    redirect_addr.sin_addr = redirect_ip;
+
+    unsigned short port = (addr->sin_port >> 8) | (addr->sin_port << 8);
+    PRINT_DEBUG_N("Connect redirect: %d.%d.%d.%d -> %d.%d.%d.%d (port %d)",
+        (unsigned char)(dest_ip >> 0), (unsigned char)(dest_ip >> 8),
+        (unsigned char)(dest_ip >> 16), (unsigned char)(dest_ip >> 24),
+        (unsigned char)(redirect_ip >> 0), (unsigned char)(redirect_ip >> 8),
+        (unsigned char)(redirect_ip >> 16), (unsigned char)(redirect_ip >> 24),
+        port);
+
+    return pRealConnect(s, &redirect_addr, namelen);
+}
+
+void InstallConnectHook()
+{
+    void* pRealConn = (void*)GetProcAddress(hDll, "connect");
+    if (!pRealConn) return;
+
+    MH_STATUS rc = MH_Initialize();
+    if (rc != MH_OK && rc != MH_ERROR_ALREADY_INITIALIZED) return;
+
+    void* pTrampoline = nullptr;
+    rc = MH_CreateHook(pRealConn, (LPVOID)DetourConnect, &pTrampoline);
+    if (rc != MH_OK) {
+        PRINT_DEBUG_N("Connect hook: MH_CreateHook failed: %d", (int)rc);
+    } else {
+        pRealConnect = (OriginalConnect)pTrampoline;
+        MH_EnableHook(pRealConn);
+        PRINT_DEBUG_N("Connect hook: installed successfully");
+    }
 }

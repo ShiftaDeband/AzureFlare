@@ -4,3 +4,4 @@
 
 extern HMODULE hDll;
 void HookLibraryFunctions();
+void InstallConnectHook();

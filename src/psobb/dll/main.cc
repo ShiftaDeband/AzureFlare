@@ -8,6 +8,7 @@
 #include <settings/settings.hh>
 
 #include <patch/startup.hh>
+#include <patch/gameguard.hh>
 
 HMODULE hDll;
 
@@ -27,6 +28,12 @@ void LoadDll()
 
     // Hook into dsound's functions
     HookLibraryFunctions();
+
+    // Install connect hook for CN IP redirect
+    InstallConnectHook();
+
+    // Apply early memory patches
+    Patches::GameGuard::Patch();
 
     // And now do our patching
     Patches::Startup::Patch();
